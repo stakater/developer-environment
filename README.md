@@ -1,6 +1,10 @@
 # developer-environment
 
-A vagrant based developer environment.
+A developer environment based on:
+
+* Vagrant
+* CoreOS
+* Docker
 
 ## TODOs
 
