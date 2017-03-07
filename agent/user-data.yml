@@ -83,6 +83,32 @@ coreos:
         ExecStop=/usr/bin/docker stop %n
         RestartSec=660
         Restart=always
+    - name: elasticsearch.service
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Elasticsearch
+        After=docker.service
+        Requires=docker.service
+        After=registrator.service
+        Requires=registrator.service
+
+        [Service]
+        TimeoutStartSec=0
+        ExecStartPre=/usr/bin/docker pull stakater/elasticsearch:5.2
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStart=/usr/bin/docker run --rm --name %n \
+                                  -p 9200:9200 -p 9300:9300 \
+                                  --dns=${COREOS_PRIVATE_IPV4} \
+                                  --dns-search=service.consul \
+                                  -v /docker-data/esdata:/usr/share/elasticsearch/data \
+                                  --label SERVICE_NAME=elasticsearch \
+                                  --label SERVICE_TAGS=infra-app \
+                                  stakater/elasticsearch:5.2
+        ExecStop=/usr/bin/docker stop %n
+        RestartSec=10
+        Restart=always        
     - name: increase-vm-max-map-count.service
       command: start
       content: |
