@@ -100,7 +100,7 @@ coreos:
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStart=/usr/bin/docker run --rm --name %n \
                                   -p 9200:9200 -p 9300:9300 \
-                                  --dns=${COREOS_PRIVATE_IPV4} \
+                                  --dns=$private_ipv4 \
                                   --dns-search=service.consul \
                                   -v /docker-data/esdata:/usr/share/elasticsearch/data \
                                   --label SERVICE_NAME=elasticsearch \
