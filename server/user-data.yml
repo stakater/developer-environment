@@ -1,0 +1,53 @@
+#cloud-config
+
+coreos:
+  etcd2:
+    # multi-region and multi-cloud deployments need to use $public_ipv4
+    advertise-client-urls: http://$private_ipv4:2379
+    initial-advertise-peer-urls: http://$private_ipv4:2380
+    # listen on both the official ports and the legacy ports
+    # legacy ports can be omitted if your application doesn't depend on them
+    listen-client-urls: http://0.0.0.0:2379,http://0.0.0.0:4001
+    listen-peer-urls: http://$private_ipv4:2380,http://$private_ipv4:7001
+  fleet:
+    public-ip: $private_ipv4
+    etcd_key_prefix: "/stakater/server"
+  units:
+    - name: etcd2.service
+      command: start
+      drop-ins:
+        - name: 60-etcd-peers.conf
+          content: |
+              [Service]
+              EnvironmentFile=/etc/sysconfig/etcd-peers
+    - name: consul.service
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Consul Server
+        After=docker.service
+        Requires=docker.service
+        After=etcd2.service
+        Requires=etcd2.service
+
+        [Service]
+        TimeoutStartSec=0
+        ExecStartPre=/usr/bin/docker pull consul:0.7.5
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStartPre=/usr/bin/sh -c "etcdctl set /consul/server/ip $private_ipv4"
+        ExecStart=/usr/bin/docker run --rm --name %n \
+                                  --net="host" \
+                                  -v /home/core/shared/consul/data:/consul/data \
+                                  consul:0.7.5 agent -server -ui -bind=$private_ipv4 -client=0.0.0.0 -bootstrap
+        ExecStop=/usr/bin/docker stop %n
+        RestartSec=650
+        Restart=always
+write_files:
+  - path: /etc/sysconfig/etcd-peers
+    permissions: 0600
+    owner: root
+    content: |
+      ETCD_INITIAL_CLUSTER_STATE=new
+      ETCD_NAME=server
+      ETCD_INITIAL_CLUSTER="server=http://$private_ipv4:2380"
