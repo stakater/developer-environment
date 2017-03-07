@@ -108,7 +108,33 @@ coreos:
                                   stakater/elasticsearch:5.2
         ExecStop=/usr/bin/docker stop %n
         RestartSec=10
-        Restart=always        
+        Restart=always
+    - name: kibana.service
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Kibana
+        After=docker.service
+        Requires=docker.service
+        After=registrator.service
+        Requires=registrator.service
+
+        [Service]        
+        ExecStartPre=/usr/bin/docker pull stakater/kibana-with-consul-template:5.2-0.18.0
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
+                                  -p 5601:5601 \
+                                  --dns=$private_ipv4 \
+                                  --dns-search=service.consul \
+                                  --label SERVICE_NAME=kibana \
+                                  --label SERVICE_TAGS=infra-app \
+                                  --memory=2048m \
+                                  -v /home/core/shared/templates/kibana-templates:/templates \
+                                  stakater/kibana-with-consul-template:5.2-0.18.0"
+        ExecStop=/usr/bin/docker stop %n
+        RestartSec=10
+        Restart=always
     - name: increase-vm-max-map-count.service
       command: start
       content: |
