@@ -11,6 +11,7 @@ Vagrant will run CoreOS guest machine which will host docker'ized apps.
 ## TODOs
 
 - [x] Create Repo
+- [ ] Fix logstash API endpoint
 - [ ] Create a diagram
 - [ ] ETCD + CONSUL + Elastic Stack (ELK + F)
 - [ ] Script to run both vagrant files sequentially; so, run one command to bring up whole stack
