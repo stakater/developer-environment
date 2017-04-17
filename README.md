@@ -18,3 +18,4 @@ Vagrant will run CoreOS guest machine which will host docker'ized apps.
 - [ ] Script to modify the permission of shared folder in host machine for consul data mapping to work
 - [x] Given user option to cherry pick services to start. ANS: The best solution is to comment out the services which are not required.
 - [ ] Map /backup/data/ to host machine as well! Currently get these errors `chown: changing ownership of '/var/lib/mysql/': Operation not permitted`
+- [ ] Run GoCD (server + agents) as systemd units
