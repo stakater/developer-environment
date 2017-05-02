@@ -1,3 +1,4 @@
 .vagrant/
 log/
 consul/
+agent/shared/gocd-data/server
