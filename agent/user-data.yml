@@ -29,7 +29,7 @@ coreos:
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        ExecStart=/usr/sbin/sysctl -w vm.max_map_count=262144      
+        ExecStart=/usr/sbin/sysctl -w vm.max_map_count=262144
     - name: install-docker-compose.service
       command: start
       content: |
@@ -69,7 +69,7 @@ coreos:
                                   -e 'CONSUL_ALLOW_PRIVILEGED_PORTS=' \
                                   consul:0.7.5 agent -retry-join=${CONSUL_SERVER} -dns-port=53 -bind=$private_ipv4 -client=0.0.0.0 -recursor=${FALLBACK_HOST_DNS}
         ExecStop=/usr/bin/docker stop %n
-        RestartSec=650
+        RestartSec=110
         Restart=always
     - name: registrator.service
       command: start
@@ -92,11 +92,69 @@ coreos:
                                   -v /var/run/docker.sock:/tmp/docker.sock \
                                   gliderlabs/registrator:latest consul://localhost:8500
         ExecStop=/usr/bin/docker stop %n
-        RestartSec=660
+        RestartSec=120
+        Restart=always
+    - name: gocd-server.service
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=GoCD Server
+        After=docker.service
+        Requires=docker.service
+
+        [Service]
+        TimeoutStartSec=0
+        ExecStartPre=/usr/bin/docker pull stakater/gocd-server:v17.4.0
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
+                                  -p 8153:8153 \
+                                  -p 8154:8154 \
+                                  -e AGENT_KEY=123456789abcdef \
+                                  -v /home/core/shared/gocd-data/conf/cruise-config.xml:/etc/go/cruise-config.xml \
+                                  -v /home/core/shared/gocd-data/server:/var/lib/go-server \
+                                  --label SERVICE_NAME=gocd-server \
+                                  stakater/gocd-server:v17.4.0"
+        ExecStop=/usr/bin/docker stop %n
+        RestartSec=10
+        Restart=always
+    - name: gocd-agent.service
+      command: start
+      content: |
+        [Unit]
+        Description=gocd agent
+        Requires=docker.service
+        Requires=gocd-server.service
+        After=docker.service gocd-server.service
+        [Service]
+        EnvironmentFile=/etc/environment
+        TimeoutStartSec=0
+        ExecStartPre=/usr/bin/docker pull stakater/gocd-agent:v17.4.0
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStartPre=/usr/bin/systemctl set-environment GO_SERVER_IP="$(docker inspect --format='{{(index (index .NetworkSettings.IPAddress))}}' gocd-server.service)"
+        ExecStartPre=/usr/bin/systemctl set-environment GO_SERVER_PORT="$(docker inspect --format='{{(index (index .NetworkSettings.Ports \"8154/tcp\") 0).HostPort}}' gocd-server.service)"
+        ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
+                -e AGENT_KEY=123456789abcdef \
+                -e GO_SERVER_URL=https://${GO_SERVER_IP}:${GO_SERVER_PORT}/go \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /usr/bin/docker:/usr/bin/docker \
+                -v /opt/bin/docker-compose:/opt/bin/docker-compose \
+                -v /usr/lib/libdevmapper.so.1.02:/usr/lib/libdevmapper.so.1.02 \
+                -v /usr/lib64/libsystemd.so.0:/usr/lib/libsystemd.so.0 \
+                -v /usr/lib64/libgcrypt.so.20:/usr/lib/libgcrypt.so.20 \
+                -v /home/shared/gocd-data/sudoers:/etc/sudoers.d \
+                -v /home/shared/gocd-data:/gocd-data \
+                -v /usr/bin/fleetctl:/usr/bin/fleetctl \
+                -v /etc/registry-certificates:/etc/registry-certificates \
+                -v /app:/app \
+                --label SERVICE_NAME=gocd-agent \
+                stakater/gocd-agent:v17.4.0"
+        ExecStop=-/usr/bin/docker stop %n
+        RestartSec=10
         Restart=always
     - name: elasticsearch.service
       command: start
-      enable: true
+      enable: false
       content: |
         [Unit]
         Description=Elasticsearch
@@ -122,7 +180,7 @@ coreos:
         Restart=always
     - name: kibana.service
       command: start
-      enable: true
+      enable: false
       content: |
         [Unit]
         Description=Kibana
@@ -131,7 +189,7 @@ coreos:
         After=registrator.service
         Requires=registrator.service
 
-        [Service]        
+        [Service]
         ExecStartPre=/usr/bin/docker pull stakater/kibana-with-consul-template:5.2-0.18.0
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
@@ -148,7 +206,7 @@ coreos:
         Restart=always
     - name: logstash.service
       command: start
-      enable: true
+      enable: false
       content: |
         [Unit]
         Description=Logstash
@@ -157,7 +215,7 @@ coreos:
         After=registrator.service
         Requires=registrator.service
 
-        [Service]        
+        [Service]
         ExecStartPre=/usr/bin/docker pull stakater/logstash-with-consul-template:5.2-0.18.0
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
@@ -173,10 +231,10 @@ coreos:
         TimeoutStartSec=360
         ExecStop=/usr/bin/docker stop %n
         RestartSec=30
-        Restart=always       
+        Restart=always
     - name: mysql.service
       command: start
-      enable: true
+      enable: false
       content: |
         [Unit]
         Description=MySQL
@@ -185,7 +243,7 @@ coreos:
         After=registrator.service
         Requires=registrator.service
 
-        [Service]        
+        [Service]
         ExecStartPre=/usr/bin/docker pull mysql:5.7
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
@@ -196,7 +254,7 @@ coreos:
                                   -e MYSQL_ROOT_PASSWORD="123456" \
                                   --label SERVICE_NAME=mysql \
                                   --label SERVICE_TAGS=backing-service \
-                                  mysql:5.7"        
+                                  mysql:5.7"
         TimeoutStartSec=360
         ExecStop=/usr/bin/docker stop %n
         RestartSec=30
