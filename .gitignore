@@ -2,3 +2,4 @@
 log/
 consul/
 agent/shared/gocd-data/server
+id_rsa*
