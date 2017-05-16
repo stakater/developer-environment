@@ -68,6 +68,8 @@ coreos:
                                   -v /consul/data:/consul/data \
                                   -e 'CONSUL_ALLOW_PRIVILEGED_PORTS=' \
                                   consul:0.7.5 agent -retry-join=${CONSUL_SERVER} -dns-port=53 -bind=$private_ipv4 -client=0.0.0.0 -recursor=${FALLBACK_HOST_DNS}
+        ExecStartPost=/usr/bin/cp -r /home/core/shared/templates /home/core/templates
+        ExecStartPost=/usr/bin/chown -R core:docker /home/core/templates
         ExecStop=/usr/bin/docker stop %n
         RestartSec=110
         Restart=always
@@ -93,64 +95,6 @@ coreos:
                                   gliderlabs/registrator:latest consul://localhost:8500
         ExecStop=/usr/bin/docker stop %n
         RestartSec=120
-        Restart=always
-    - name: gocd-server.service
-      command: start
-      enable: true
-      content: |
-        [Unit]
-        Description=GoCD Server
-        After=docker.service
-        Requires=docker.service
-
-        [Service]
-        TimeoutStartSec=0
-        ExecStartPre=/usr/bin/docker pull stakater/gocd-server:v17.4.0
-        ExecStartPre=-/usr/bin/docker rm %n
-        ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
-                                  -p 8153:8153 \
-                                  -p 8154:8154 \
-                                  -e AGENT_KEY=123456789abcdef \
-                                  -v /home/core/shared/gocd-data/conf/cruise-config.xml:/etc/go/cruise-config.xml \
-                                  -v /home/core/shared/gocd-data/server:/var/lib/go-server \
-                                  --label SERVICE_NAME=gocd-server \
-                                  stakater/gocd-server:v17.4.0"
-        ExecStop=/usr/bin/docker stop %n
-        RestartSec=10
-        Restart=always
-    - name: gocd-agent.service
-      command: start
-      content: |
-        [Unit]
-        Description=gocd agent
-        Requires=docker.service
-        Requires=gocd-server.service
-        After=docker.service gocd-server.service
-        [Service]
-        EnvironmentFile=/etc/environment
-        TimeoutStartSec=0
-        ExecStartPre=/usr/bin/docker pull stakater/gocd-agent:v17.4.0
-        ExecStartPre=-/usr/bin/docker rm %n
-        ExecStartPre=/usr/bin/systemctl set-environment GO_SERVER_IP="$(docker inspect --format='{{(index (index .NetworkSettings.IPAddress))}}' gocd-server.service)"
-        ExecStartPre=/usr/bin/systemctl set-environment GO_SERVER_PORT="$(docker inspect --format='{{(index (index .NetworkSettings.Ports \"8154/tcp\") 0).HostPort}}' gocd-server.service)"
-        ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
-                -e AGENT_KEY=123456789abcdef \
-                -e GO_SERVER_URL=https://${GO_SERVER_IP}:${GO_SERVER_PORT}/go \
-                -v /var/run/docker.sock:/var/run/docker.sock \
-                -v /usr/bin/docker:/usr/bin/docker \
-                -v /opt/bin/docker-compose:/opt/bin/docker-compose \
-                -v /usr/lib/libdevmapper.so.1.02:/usr/lib/libdevmapper.so.1.02 \
-                -v /usr/lib64/libsystemd.so.0:/usr/lib/libsystemd.so.0 \
-                -v /usr/lib64/libgcrypt.so.20:/usr/lib/libgcrypt.so.20 \
-                -v /home/shared/gocd-data/sudoers:/etc/sudoers.d \
-                -v /home/shared/gocd-data:/gocd-data \
-                -v /usr/bin/fleetctl:/usr/bin/fleetctl \
-                -v /etc/registry-certificates:/etc/registry-certificates \
-                -v /app:/app \
-                --label SERVICE_NAME=gocd-agent \
-                stakater/gocd-agent:v17.4.0"
-        ExecStop=-/usr/bin/docker stop %n
-        RestartSec=10
         Restart=always
     - name: elasticsearch.service
       command: start
@@ -198,8 +142,7 @@ coreos:
                                   --dns-search=service.consul \
                                   --label SERVICE_NAME=kibana \
                                   --label SERVICE_TAGS=infra-app \
-                                  --memory=2048m \
-                                  -v /home/core/shared/templates/kibana-templates:/templates \
+                                  -v /home/core/templates/kibana-templates:/templates \
                                   stakater/kibana-with-consul-template:5.2-0.18.0"
         ExecStop=/usr/bin/docker stop %n
         RestartSec=10
@@ -223,38 +166,36 @@ coreos:
                                   -p 9600:9600 \
                                   --dns=$private_ipv4 \
                                   --dns-search=service.consul \
-                                  -v /home/core/shared/templates/logstash-templates:/templates \
+                                  -v /home/core/templates/logstash-templates:/templates \
                                   --label SERVICE_NAME=logstash \
                                   --label SERVICE_TAGS=infra-app \
-                                  --memory=2048m \
                                   stakater/logstash-with-consul-template:5.2-0.18.0"
         TimeoutStartSec=360
         ExecStop=/usr/bin/docker stop %n
         RestartSec=30
         Restart=always
-    - name: mysql.service
+    - name: filebeat.service
       command: start
       enable: false
       content: |
         [Unit]
-        Description=MySQL
+        Description=Filebeat
         After=docker.service
         Requires=docker.service
         After=registrator.service
         Requires=registrator.service
 
         [Service]
-        ExecStartPre=/usr/bin/docker pull mysql:5.7
+        ExecStartPre=/usr/bin/docker pull stakater/filebeat-with-consul-template:5.2-0.18.0
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
-                                  -p 3306:3306 \
                                   --dns=$private_ipv4 \
                                   --dns-search=service.consul \
-                                  -v /backup/data/mysql:/var/lib/mysql \
-                                  -e MYSQL_ROOT_PASSWORD="123456" \
-                                  --label SERVICE_NAME=mysql \
-                                  --label SERVICE_TAGS=backing-service \
-                                  mysql:5.7"
+                                  -v /home/core/templates/filebeat-templates:/templates \
+                                  -v /home/core/shared/logs:/var/log/app \
+                                  --label SERVICE_NAME=filebeat \
+                                  --label SERVICE_TAGS=infra-app \
+                                  stakater/filebeat-with-consul-template:5.2-0.18.0"
         TimeoutStartSec=360
         ExecStop=/usr/bin/docker stop %n
         RestartSec=30

@@ -36,9 +36,10 @@ coreos:
         ExecStartPre=/usr/bin/docker pull consul:0.7.5
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStartPre=/usr/bin/sh -c "etcdctl set /consul/server/ip $private_ipv4"
+        ExecStartPre=/usr/bin/cp -r /home/core/shared /home/core/consul
         ExecStart=/usr/bin/docker run --rm --name %n \
                                   --net="host" \
-                                  -v /home/core/shared/consul/data:/consul/data \
+                                  -v /home/core/consul/data:/consul/data \
                                   consul:0.7.5 agent -server -ui -bind=$private_ipv4 -client=0.0.0.0 -bootstrap
         ExecStop=/usr/bin/docker stop %n
         RestartSec=650
