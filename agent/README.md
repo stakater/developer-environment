@@ -1,6 +1,13 @@
 # AGENT MACHINE
 
 ---
+## SSH setup for git
+The SSH key file is to be placed in `agent/shared/gocd-data/ssh-key` folder by the name `id_rsa`.
+
+For now, the `gocd-agent` service, copies the file to another location (`/home/core/docker-volumes/ssh-key/`), and changes its owner to user with ID `1001` (hardcoded ID for user `go` inside `stakater/gocd-agent` and `stakater/gocd-server` image), before starting the gocd-agent & gocd-server docker containers. The location `/home/core/docker-volumes/ssh-key/` is then mapped inside the gocd-agent  & gocd-server containers so that it is accessible by the `go` user in order to perform git operations.
+
+The reason to copy the file in another location (`/home/core/docker-volumes/ssh-key/`) is that we aren't allowed to change permissions of the file which is shared b/w the host machine and vagrant machine. So we copy it to another locaiton, change the file permissions and then map that volume inside the docker containers/
+
 
 ## ELASTICSEARCH
 

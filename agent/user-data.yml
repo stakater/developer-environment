@@ -46,6 +46,27 @@ coreos:
         ExecStart=/opt/bin/install-docker-compose.sh
         [Install]
         WantedBy=multi-user.target
+
+    # Not importing in .ssh as we are changing the file owner with hardcoded user in gocd-agent's container
+    # as a workaround fo now
+    # - name: import-ssh-keys.service
+    #   command: start
+    #   content: |
+    #     [Unit]
+    #     Description=Import SSH keys
+    #
+    #     [Service]
+    #     RemainAfterExit=true
+    #     ExecStartPre=/usr/bin/mkdir -p /home/core/.ssh
+    #     ExecStart=/usr/bin/bash -c "cp /home/core/shared/gocd-data/ssh-key/* /home/core/.ssh/ && \
+    #               chmod 600 /home/core/.ssh/id_rsa && \
+    #               chmod 644 /home/core/.ssh/config"
+    #     Restart=on-failure
+    #     RestartSec=30
+    #     StartLimitInterval=200
+    #     StartLimitBurst=5
+    #     [Install]
+    #     WantedBy=multi-user.target
     - name: consul-agent.service
       command: start
       enable: true
@@ -107,12 +128,17 @@ coreos:
         TimeoutStartSec=0
         ExecStartPre=/usr/bin/docker pull stakater/gocd-server:v17.4.0
         ExecStartPre=-/usr/bin/docker rm %n
+        ExecStartPre=/usr/bin/bash -c "mkdir -p /home/core/docker-volumes/ssh-key"
+        ExecStartPre=/usr/bin/bash -c "cp /home/core/shared/gocd-data/ssh-key/* /home/core/docker-volumes/ssh-key/"
+        ExecStartPre=/usr/bin/chown -R 1001:1001 /home/core/docker-volumes/ssh-key/
         ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
                                   -p 8153:8153 \
                                   -p 8154:8154 \
                                   -e AGENT_KEY=123456789abcdef \
-                                  -v /home/core/shared/gocd-data/conf/cruise-config.xml:/etc/go/cruise-config.xml \
-                                  -v /home/core/shared/gocd-data/server:/var/lib/go-server \
+                                  -v /home/core/docker-volumes/ssh-key/:/home/go/.ssh:z \
+                                  -v /home/core/shared/gocd-data/conf/cruise-config.xml:/godata/config/cruise-config.xml \
+                                  -v /gocd-data/server/godata:/godata \
+                                  -v /etc/localtime:/etc/localtime:ro \
                                   --label SERVICE_NAME=gocd-server \
                                   stakater/gocd-server:v17.4.0"
         ExecStop=/usr/bin/docker stop %n
@@ -133,20 +159,23 @@ coreos:
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStartPre=/usr/bin/systemctl set-environment GO_SERVER_IP="$(docker inspect --format='{{(index (index .NetworkSettings.IPAddress))}}' gocd-server.service)"
         ExecStartPre=/usr/bin/systemctl set-environment GO_SERVER_PORT="$(docker inspect --format='{{(index (index .NetworkSettings.Ports \"8154/tcp\") 0).HostPort}}' gocd-server.service)"
+        ExecStartPre=/usr/bin/bash -c "mkdir -p /home/core/docker-volumes/ssh-key"
+        ExecStartPre=/usr/bin/bash -c "cp /home/core/shared/gocd-data/ssh-key/* /home/core/docker-volumes/ssh-key/"
+        ExecStartPre=/usr/bin/chown -R 1001:1001 /home/core/docker-volumes/ssh-key/
         ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
                 -e AGENT_KEY=123456789abcdef \
                 -e GO_SERVER_URL=https://${GO_SERVER_IP}:${GO_SERVER_PORT}/go \
+                -v /home/core/docker-volumes/ssh-key/:/home/go/.ssh:z \
                 -v /var/run/docker.sock:/var/run/docker.sock \
                 -v /usr/bin/docker:/usr/bin/docker \
                 -v /opt/bin/docker-compose:/opt/bin/docker-compose \
                 -v /usr/lib/libdevmapper.so.1.02:/usr/lib/libdevmapper.so.1.02 \
                 -v /usr/lib64/libsystemd.so.0:/usr/lib/libsystemd.so.0 \
                 -v /usr/lib64/libgcrypt.so.20:/usr/lib/libgcrypt.so.20 \
-                -v /home/shared/gocd-data/sudoers:/etc/sudoers.d \
-                -v /home/shared/gocd-data:/gocd-data \
                 -v /usr/bin/fleetctl:/usr/bin/fleetctl \
                 -v /etc/registry-certificates:/etc/registry-certificates \
-                -v /app:/app \
+                -v /etc/localtime:/etc/localtime:ro \
+                -v /stakater:/stakater \
                 --label SERVICE_NAME=gocd-agent \
                 stakater/gocd-agent:v17.4.0"
         ExecStop=-/usr/bin/docker stop %n
