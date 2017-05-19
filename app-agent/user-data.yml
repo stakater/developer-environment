@@ -30,22 +30,6 @@ coreos:
         Type=oneshot
         RemainAfterExit=yes
         ExecStart=/usr/sbin/sysctl -w vm.max_map_count=262144
-    - name: install-docker-compose.service
-      command: start
-      content: |
-        [Unit]
-        Description=Install Docker compose
-        Requires=docker.service
-        After=docker.service
-
-        [Service]
-        Type=oneshot
-        RemainAfterExit=true
-        EnvironmentFile=/etc/environment
-        TimeoutStartSec=10min
-        ExecStart=/opt/bin/install-docker-compose.sh
-        [Install]
-        WantedBy=multi-user.target
     - name: consul-agent.service
       command: start
       enable: true
@@ -96,84 +80,6 @@ coreos:
         ExecStop=/usr/bin/docker stop %n
         RestartSec=120
         Restart=always
-    - name: elasticsearch.service
-      command: start
-      enable: false
-      content: |
-        [Unit]
-        Description=Elasticsearch
-        After=docker.service
-        Requires=docker.service
-        After=registrator.service
-        Requires=registrator.service
-
-        [Service]
-        TimeoutStartSec=0
-        ExecStartPre=/usr/bin/docker pull stakater/elasticsearch:5.2
-        ExecStartPre=-/usr/bin/docker rm %n
-        ExecStart=/usr/bin/docker run --rm --name %n \
-                                  -p 9200:9200 -p 9300:9300 \
-                                  --dns=$private_ipv4 \
-                                  --dns-search=service.consul \
-                                  -v /backup/data/es:/usr/share/elasticsearch/data \
-                                  --label SERVICE_NAME=elasticsearch \
-                                  --label SERVICE_TAGS=infra-app \
-                                  stakater/elasticsearch:5.2
-        ExecStop=/usr/bin/docker stop %n
-        RestartSec=10
-        Restart=always
-    - name: kibana.service
-      command: start
-      enable: false
-      content: |
-        [Unit]
-        Description=Kibana
-        After=docker.service
-        Requires=docker.service
-        After=registrator.service
-        Requires=registrator.service
-
-        [Service]
-        ExecStartPre=/usr/bin/docker pull stakater/kibana-with-consul-template:5.2-0.18.0
-        ExecStartPre=-/usr/bin/docker rm %n
-        ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
-                                  -p 5601:5601 \
-                                  --dns=$private_ipv4 \
-                                  --dns-search=service.consul \
-                                  --label SERVICE_NAME=kibana \
-                                  --label SERVICE_TAGS=infra-app \
-                                  -v /home/core/templates/kibana-templates:/templates \
-                                  stakater/kibana-with-consul-template:5.2-0.18.0"
-        ExecStop=/usr/bin/docker stop %n
-        RestartSec=10
-        Restart=always
-    - name: logstash.service
-      command: start
-      enable: false
-      content: |
-        [Unit]
-        Description=Logstash
-        After=docker.service
-        Requires=docker.service
-        After=registrator.service
-        Requires=registrator.service
-
-        [Service]
-        ExecStartPre=/usr/bin/docker pull stakater/logstash-with-consul-template:5.2-0.18.0
-        ExecStartPre=-/usr/bin/docker rm %n
-        ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
-                                  -p 5044:5044 \
-                                  -p 9600:9600 \
-                                  --dns=$private_ipv4 \
-                                  --dns-search=service.consul \
-                                  -v /home/core/templates/logstash-templates:/templates \
-                                  --label SERVICE_NAME=logstash \
-                                  --label SERVICE_TAGS=infra-app \
-                                  stakater/logstash-with-consul-template:5.2-0.18.0"
-        TimeoutStartSec=360
-        ExecStop=/usr/bin/docker stop %n
-        RestartSec=30
-        Restart=always
     - name: filebeat.service
       command: start
       enable: false
@@ -207,12 +113,3 @@ write_files:
     content: |
       # Hardcoded server IP
       ETCD_INITIAL_CLUSTER="server=http://172.17.8.101:2380"
-
-  - path: /opt/bin/install-docker-compose.sh
-    permissions: 0700
-    owner: root
-    content: |
-        #!/bin/bash
-        mkdir -p /opt/bin
-        curl -L `curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r '.assets[].browser_download_url | select(contains("Linux") and contains("x86_64"))'` > /opt/bin/docker-compose
-        chmod +x /opt/bin/docker-compose

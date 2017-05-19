@@ -1,0 +1,47 @@
+logstash:
+  image: stakater/logstash-with-consul-template:5.2-0.18.0
+  container_name: logstash
+  dns: ${COREOS_PRIVATE_IPV4}
+  dns_search: service.consul
+  volumes:
+    - /consul-templates/logstash-templates:/templates
+  ports:
+    - 5044:5044
+  labels:
+    - SERVICE_NAME=logstash
+
+elasticsearch:
+  image: stakater/elasticsearch:5.2
+  container_name: elasticsearch
+  dns: ${COREOS_PRIVATE_IPV4}
+  dns_search: service.consul
+  volumes:
+    - ~/app-data/esdata:/usr/share/elasticsearch/data
+  labels:
+    - SERVICE_NAME=elasticsearch
+  ports:
+    - 9200:9200
+    - 9300:9300
+
+kibana:
+  image: stakater/kibana-with-consul-template:5.2-0.18.0
+  container_name: kibana
+  dns: ${COREOS_PRIVATE_IPV4}
+  dns_search: service.consul
+  ports:
+    - 5601:5601
+  volumes:
+    - /consul-templates/kibana-templates:/templates
+  labels:
+    - SERVICE_NAME=kibana
+
+filebeat:
+  image: stakater/filebeat-with-consul-template:5.2-0.18.0
+  container_name: filebeat
+  dns: ${COREOS_PRIVATE_IPV4}
+  dns_search: service.consul
+  volumes:
+    - ~/shared/logs:/var/log/app
+    - /consul-templates/filebeat-templates:/templates
+  labels:
+    - SERVICE_NAME=filebeat
