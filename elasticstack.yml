@@ -1,0 +1,40 @@
+logstash:
+ image: stakater/logstash:5.2.1
+ container_name: logstash
+ ports:
+   - 5044:5044
+ links:
+   - elasticsearch:elasticsearch
+ labels:
+   - SERVICE_NAME=logstash
+
+elasticsearch:
+ image: stakater/elasticsearch:5.2.1
+ container_name: elasticsearch
+ volumes:
+   - ./app-data/esdata:/usr/share/elasticsearch/data
+ labels:
+   - SERVICE_NAME=elasticsearch
+ ports:
+   - 9200:9200
+   - 9300:9300
+
+kibana:
+ image: stakater/kibana:5.2.1
+ container_name: kibana
+ ports:
+   - 5601:5601
+ links:
+   - elasticsearch:elasticsearch
+ labels:
+   - SERVICE_NAME=kibana
+
+filebeat:
+ image: stakater/filebeat:5.2.1
+ container_name: filebeat
+ links:
+   - logstash:logstash
+ volumes:
+   - ./app-agent/shared/logs:/var/log/app
+ labels:
+   - SERVICE_NAME=filebeat
