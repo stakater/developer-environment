@@ -5,14 +5,14 @@ logstash:
    - 5044:5044
  links:
    - elasticsearch:elasticsearch
+ volumes:
+   - ./logstash.conf:/etc/logstash/conf.d/logstash.conf
  labels:
    - SERVICE_NAME=logstash
 
 elasticsearch:
  image: stakater/elasticsearch:5.2.1
  container_name: elasticsearch
- volumes:
-   - ./app-data/esdata:/usr/share/elasticsearch/data
  labels:
    - SERVICE_NAME=elasticsearch
  ports:
@@ -24,6 +24,8 @@ kibana:
  container_name: kibana
  ports:
    - 5601:5601
+ environment:
+   - ELASTICSEARCH_URL=http://elasticsearch:9200
  links:
    - elasticsearch:elasticsearch
  labels:
@@ -34,7 +36,10 @@ filebeat:
  container_name: filebeat
  links:
    - logstash:logstash
+ environment:
+   - LOGSTASH_HOST=logstash
+   - LOGSTASH_PORT=5044
  volumes:
-   - ./app-agent/shared/logs:/var/log/app
+   - ./logs:/var/log/stakater/sample
  labels:
    - SERVICE_NAME=filebeat

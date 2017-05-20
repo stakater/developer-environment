@@ -1,0 +1,7 @@
+{"@timestamp":"2017-03-02T11:05:16.776+00:00","@version":1,"message":"starting app","level":"INFO","HOSTNAME":"demo-server","appname":"demo"}
+{"@timestamp":"2017-03-02T11:05:17.776+00:00","@version":1,"message":"configuring app","level":"INFO","HOSTNAME":"demo-server","appname":"demo"}
+{"@timestamp":"2017-03-02T11:05:18.776+00:00","@version":1,"message":"validating property a","level":"DEBUG","HOSTNAME":"demo-server","appname":"demo"}
+{"@timestamp":"2017-03-02T11:05:19.776+00:00","@version":1,"message":"validating property b","level":"DEBUG","HOSTNAME":"demo-server","appname":"demo"}
+{"@timestamp":"2017-03-02T11:05:20.776+00:00","@version":1,"message":"validating property c","level":"DEBUG","HOSTNAME":"demo-server","appname":"demo"}
+{"@timestamp":"2017-03-02T11:05:20.776+00:00","@version":1,"message":"unable to validate property c. skipping...","level":"WARN","HOSTNAME":"demo-server","appname":"demo"}
+{"@timestamp":"2017-03-02T11:05:21.776+00:00","@version":1,"message":"app started","level":"INFO","HOSTNAME":"demo-server","appname":"demo"}
