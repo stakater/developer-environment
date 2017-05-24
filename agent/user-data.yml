@@ -207,6 +207,54 @@ coreos:
         ExecStop=/usr/bin/docker stop %n
         RestartSec=10
         Restart=always
+    - name: gen-certificate.service
+      command: start
+      content: |
+        [Unit]
+        Description= Service for generating certificates for docker registry
+        Requires=docker.service
+        After=docker.service
+        [Service]
+        EnvironmentFile=/etc/environment
+        TimeoutStartSec=300
+        ExecStartPre=/usr/bin/docker pull stakater/ssl-certs-generator:1.0
+        ExecStartPre=-/usr/bin/docker rm -f %n
+        ExecStartPre=-/bin/mkdir -p /opt/data/registry/data
+        ExecStartPre=-/bin/mkdir -p /opt/data/registry/ssl
+        ExecStartPre=-/bin/mkdir -p /opt/data/registry/config
+        ExecStart=/usr/bin/docker run --rm --name %n \
+                  -v /opt/data/registry/ssl:/certs \
+                  -e CA_SUBJECT=localhost \
+                  -e SSL_DNS=localhost\
+                  -e SSL_EXPIRE=24820 \
+                  -e CA_EXPIRE=24820 \
+                  stakater/ssl-certs-generator:1.0 && \
+                  /usr/bin/mkdir -p /etc/docker/certs.d/localhost:5000/ && \
+                  /usr/bin/cp /opt/data/registry/ssl/ca.pem /etc/docker/certs.d/localhost:5000/ca.crt
+        Restart=on-failure
+        RestartSec=5s
+    - name: registry.service
+      command: start
+      content: |
+        [Unit]
+        Description=Docker Image Registry
+        Requires=docker.service
+        After=docker.service
+        After=gen-certificate.service
+        [Service]
+        EnvironmentFile=/etc/environment
+        TimeoutStartSec=300
+        ExecStartPre=/usr/bin/docker pull stakater/docker-registry:2.6
+        ExecStartPre=-/usr/bin/docker rm -f %n
+        ExecStart=/usr/bin/docker run  --rm --name %n -p 5000:5000 \
+                  -v /opt/data/registry:/opt/registry \
+                  -e REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/opt/registry/data \
+                  -e REGISTRY_HTTP_TLS_KEY=/opt/registry/ssl/key.pem \
+                  -e REGISTRY_HTTP_TLS_CERTIFICATE=/opt/registry/ssl/cert.pem \
+                  -e REGISTRY_HTTP_TLS_CLIENTCAS_0=/opt/registry/ssl/ca.pem \
+                  stakater/docker-registry:2.6
+        RestartSec=5
+        Restart=always
     - name: kibana.service
       command: start
       enable: false
