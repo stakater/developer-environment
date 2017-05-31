@@ -19,6 +19,23 @@ coreos:
             EnvironmentFile=/etc/sysconfig/initial-cluster
     - name: fleet.service
       command: start
+    - name: docker.service
+      drop-ins:
+        - name: 50-consul-dns.conf
+          content: |
+            [Unit]
+            Description=Add Consul DNS to all docker globally
+            [Service]
+            Environment='DOCKER_OPTS=--dns="$private_ipv4" --dns-search=service.consul'
+    - name: nameservers.network
+      content: |
+        [Network]
+        DHCP=ipv4
+        DNS=$private_ipv4
+        Domains=service.consul
+        [DHCP]
+        UseDNS=true
+        UseDomains=true
     - name: increase-vm-max-map-count.service
       command: start
       content: |
@@ -81,7 +98,7 @@ coreos:
         [Service]
         TimeoutStartSec=0
         ExecStartPre=/usr/bin/bash -c "/usr/bin/systemctl set-environment CONSUL_SERVER=$(etcdctl get /consul/server/ip)"
-        ExecStartPre=/usr/bin/bash -c "/usr/bin/systemctl set-environment FALLBACK_HOST_DNS=$(cat /etc/resolv.conf | grep "nameserver" | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}')"
+        ExecStartPre=/usr/bin/bash -c "/usr/bin/systemctl set-environment FALLBACK_HOST_DNS=$(cat /etc/resolv.conf | grep "nameserver" | grep -v "$private_ipv4"| grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}')"
         ExecStartPre=/usr/bin/docker pull consul:0.8.3
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStart=/usr/bin/docker run --rm --name %n \
@@ -114,6 +131,25 @@ coreos:
                                   gliderlabs/registrator:latest consul://localhost:8500
         ExecStop=/usr/bin/docker stop %n
         RestartSec=120
+        Restart=always
+    - name: nexus.service
+      command: start
+      content: |
+        [Unit]
+        Description=Sonatype Nexus Repository
+        Requires=docker.service
+        [Service]
+        TimeoutStartSec=20min
+        ExecStartPre=/usr/bin/docker pull stakater/nexus:2.14
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStart=/usr/bin/docker run --rm --name %n \
+                      -p 8081:8081 \
+                      -v /nexus-data:/sonatype-work \
+                      -v /etc/localtime:/etc/localtime:ro \
+                      --label SERVICE_NAME=nexus \
+                      stakater/nexus:2.14
+        ExecStop=/usr/bin/docker stop %n
+        RestartSec=10
         Restart=always
     - name: gocd-server.service
       command: start
@@ -165,6 +201,7 @@ coreos:
         ExecStart=/usr/bin/sh -c "/usr/bin/docker run --rm --name %n \
                 -e AGENT_KEY=123456789abcdef \
                 -e GO_SERVER_URL=https://${GO_SERVER_IP}:${GO_SERVER_PORT}/go \
+                -e CONSUL_DNS=${COREOS_PRIVATE_IPV4} \
                 -v /home/core/docker-volumes/ssh-key/:/home/go/.ssh:z \
                 -v /var/run/docker.sock:/var/run/docker.sock \
                 -v /usr/bin/docker:/usr/bin/docker \
@@ -176,10 +213,60 @@ coreos:
                 -v /etc/registry-certificates:/etc/registry-certificates \
                 -v /etc/localtime:/etc/localtime:ro \
                 -v /stakater:/stakater \
+                --dns=${COREOS_PRIVATE_IPV4} \
+                --dns-search=service.consul \
                 --label SERVICE_NAME=gocd-agent \
                 stakater/gocd-agent:v17.4.0"
         ExecStop=-/usr/bin/docker stop %n
         RestartSec=10
+        Restart=always
+    - name: gen-certificates.service
+      command: start
+      content: |
+        [Unit]
+        Description= Service for generating certificates for docker registry
+        Requires=docker.service
+        After=docker.service
+        Before=registry.service
+        [Service]
+        EnvironmentFile=/etc/environment
+        TimeoutStartSec=300
+        ExecStartPre=/usr/bin/docker pull stakater/ssl-certs-generator:1.0
+        ExecStartPre=-/usr/bin/docker rm -f %n
+        ExecStartPre=-/bin/mkdir -p /opt/data/registry/data
+        ExecStartPre=-/bin/mkdir -p /opt/data/registry/ssl
+        ExecStartPre=-/bin/mkdir -p /opt/data/registry/config
+        ExecStart=/usr/bin/docker run --rm --name %n \
+                  -v /opt/data/registry/ssl:/certs \
+                  -e CA_SUBJECT=docker-registry \
+                  -e SSL_DNS=docker-registry \
+                  -e SSL_EXPIRE=24820 \
+                  -e CA_EXPIRE=24820 \
+                  stakater/ssl-certs-generator:1.0
+        Restart=on-failure
+        RestartSec=5s
+    - name: registry.service
+      command: start
+      content: |
+        [Unit]
+        Description=Docker Image Registry
+        Requires=docker.service
+        After=docker.service
+        [Service]
+        EnvironmentFile=/etc/environment
+        TimeoutStartSec=300
+        ExecStartPre=/usr/bin/docker pull stakater/docker-registry:2.6
+        ExecStartPre=-/usr/bin/docker rm -f %n
+        ExecStart=/usr/bin/docker run  --rm --name %n -p 5000:5000 \
+                  -v /opt/data/registry:/opt/registry \
+                  -e REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/opt/registry/data \
+                  -e REGISTRY_HTTP_TLS_KEY=/opt/registry/ssl/key.pem \
+                  -e REGISTRY_HTTP_TLS_CERTIFICATE=/opt/registry/ssl/cert.pem \
+                  -e REGISTRY_HTTP_TLS_CLIENTCAS_0=/opt/registry/ssl/ca.pem \
+                  stakater/docker-registry:2.6
+        ExecStartPost=-/usr/bin/mkdir -p /etc/docker/certs.d/docker-registry:5000/
+        ExecStartPost=-/usr/bin/cp /opt/data/registry/ssl/ca.pem /etc/docker/certs.d/docker-registry:5000/ca.crt
+        RestartSec=5
         Restart=always
     - name: elasticsearch.service
       command: start
@@ -206,54 +293,6 @@ coreos:
                                   stakater/elasticsearch:5.2
         ExecStop=/usr/bin/docker stop %n
         RestartSec=10
-        Restart=always
-    - name: gen-certificate.service
-      command: start
-      content: |
-        [Unit]
-        Description= Service for generating certificates for docker registry
-        Requires=docker.service
-        After=docker.service
-        [Service]
-        EnvironmentFile=/etc/environment
-        TimeoutStartSec=300
-        ExecStartPre=/usr/bin/docker pull stakater/ssl-certs-generator:1.0
-        ExecStartPre=-/usr/bin/docker rm -f %n
-        ExecStartPre=-/bin/mkdir -p /opt/data/registry/data
-        ExecStartPre=-/bin/mkdir -p /opt/data/registry/ssl
-        ExecStartPre=-/bin/mkdir -p /opt/data/registry/config
-        ExecStart=/usr/bin/docker run --rm --name %n \
-                  -v /opt/data/registry/ssl:/certs \
-                  -e CA_SUBJECT=localhost \
-                  -e SSL_DNS=localhost\
-                  -e SSL_EXPIRE=24820 \
-                  -e CA_EXPIRE=24820 \
-                  stakater/ssl-certs-generator:1.0 && \
-                  /usr/bin/mkdir -p /etc/docker/certs.d/localhost:5000/ && \
-                  /usr/bin/cp /opt/data/registry/ssl/ca.pem /etc/docker/certs.d/localhost:5000/ca.crt
-        Restart=on-failure
-        RestartSec=5s
-    - name: registry.service
-      command: start
-      content: |
-        [Unit]
-        Description=Docker Image Registry
-        Requires=docker.service
-        After=docker.service
-        After=gen-certificate.service
-        [Service]
-        EnvironmentFile=/etc/environment
-        TimeoutStartSec=300
-        ExecStartPre=/usr/bin/docker pull stakater/docker-registry:2.6
-        ExecStartPre=-/usr/bin/docker rm -f %n
-        ExecStart=/usr/bin/docker run  --rm --name %n -p 5000:5000 \
-                  -v /opt/data/registry:/opt/registry \
-                  -e REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/opt/registry/data \
-                  -e REGISTRY_HTTP_TLS_KEY=/opt/registry/ssl/key.pem \
-                  -e REGISTRY_HTTP_TLS_CERTIFICATE=/opt/registry/ssl/cert.pem \
-                  -e REGISTRY_HTTP_TLS_CLIENTCAS_0=/opt/registry/ssl/ca.pem \
-                  stakater/docker-registry:2.6
-        RestartSec=5
         Restart=always
     - name: kibana.service
       command: start
